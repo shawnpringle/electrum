@@ -28,7 +28,7 @@ import history_widget
 import receiving_widget
 from electrum import util
 import datetime
-
+from qsdn import QSDNNumericValidator
 from electrum.version import ELECTRUM_VERSION as electrum_version
 from electrum.util import format_satoshis, age
 
@@ -166,9 +166,7 @@ class MiniWindow(QDialog):
 
         self.amount_input.setFocusPolicy(Qt.ClickFocus)
         # This is changed according to the user's displayed balance
-        self.amount_validator = QDoubleValidator(self.amount_input)
-        self.amount_validator.setNotation(QDoubleValidator.StandardNotation)
-        self.amount_validator.setDecimals(8)
+        self.amount_validator = QSDNNumericValidator(16 - self.actuator.g.decimal_point, self.actuator.g.decimal_point)	    
         self.amount_input.setValidator(self.amount_validator)
 
         # This removes the very ugly OSX highlighting, please leave this in :D
