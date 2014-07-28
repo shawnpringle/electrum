@@ -26,7 +26,7 @@ import StringIO
 try:
     from qsdn import QSDNLocale
 except:
-    print "Module missing.  Download from https://github.com/shawnpringle/separatorsafterdecimal"
+    print "Module missing.  Download from https://pypi.python.org/pypi/StandardDecimalNotation"
     quit()
 import PyQt4
 from PyQt4.QtGui import *
