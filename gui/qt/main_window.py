@@ -24,7 +24,7 @@ import webbrowser
 import shutil
 import StringIO
 try:
-    from qsdn import QSDNLocale
+    from standarddecimalnotation.qsdn import QSDNLocale
 except:
     print "Module missing.  Download from https://pypi.python.org/pypi/StandardDecimalNotation"
     quit()

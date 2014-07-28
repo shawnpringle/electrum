@@ -28,7 +28,7 @@ import history_widget
 import receiving_widget
 from electrum import util
 import datetime
-from qsdn import QSDNNumericValidator
+from standarddecimalnotation.qsdn import QSDNNumericValidator
 from electrum.version import ELECTRUM_VERSION as electrum_version
 from electrum.util import format_satoshis, age
 

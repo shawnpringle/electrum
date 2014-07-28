@@ -3,7 +3,7 @@
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 
-from qsdn import *
+from standarddecimalnotation.qsdn import *
 from decimal import Decimal
 
 class MyLineEdit(QLineEdit):

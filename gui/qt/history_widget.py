@@ -1,7 +1,7 @@
 from PyQt4.QtGui import *
 from electrum.i18n import _
 from decimal import Decimal
-from qsdn import QSDNLocale
+from standarddecimalnotation.qsdn import QSDNLocale
 
 class HistoryWidget(QTreeWidget):
 
