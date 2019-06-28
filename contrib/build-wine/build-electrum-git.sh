@@ -1,69 +1,77 @@
 #!/bin/bash
 
-# You probably need to update only this link
-ELECTRUM_GIT_URL=git://github.com/spesmilo/electrum.git
-BRANCH=master
 NAME_ROOT=electrum
 
 # These settings probably don't need any change
-export WINEPREFIX=/opt/wine-electrum
-PYHOME=c:/python26
+export WINEPREFIX=/opt/wine64
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONHASHSEED=22
+
+PYHOME=c:/python3
 PYTHON="wine $PYHOME/python.exe -OO -B"
+
 
 # Let's begin!
 cd `dirname $0`
 set -e
 
+mkdir -p tmp
 cd tmp
 
-if [ -d "electrum-git" ]; then
-    # GIT repository found, update it
-    echo "Pull"
+pushd $WINEPREFIX/drive_c/electrum
 
-    cd electrum-git
-    git pull
-    cd ..
+# Load electrum-locale for this release
+git submodule init
+git submodule update
 
-else
-    # GIT repository not found, clone it
-    echo "Clone"
+VERSION=`git describe --tags --dirty --always`
+echo "Last commit: $VERSION"
 
-    git clone -b $BRANCH $ELECTRUM_GIT_URL electrum-git
+pushd ./contrib/deterministic-build/electrum-locale
+if ! which msgfmt > /dev/null 2>&1; then
+    echo "Please install gettext"
+    exit 1
 fi
+for i in ./locale/*; do
+    dir=$WINEPREFIX/drive_c/electrum/electrum/$i/LC_MESSAGES
+    mkdir -p $dir
+    msgfmt --output-file=$dir/electrum.mo $i/electrum.po || true
+done
+popd
 
-cd electrum-git
-COMMIT_HASH=`git rev-parse HEAD | awk '{ print substr($1, 0, 11) }'`
-echo "Last commit: $COMMIT_HASH"
-cd ..
+find -exec touch -d '2000-11-11T11:11:11+00:00' {} +
+popd
 
+cp $WINEPREFIX/drive_c/electrum/LICENCE .
 
-rm -rf $WINEPREFIX/drive_c/electrum
-cp -r electrum-git $WINEPREFIX/drive_c/electrum
-cp electrum-git/LICENCE .
+# Install frozen dependencies
+$PYTHON -m pip install -r ../../deterministic-build/requirements.txt
 
-# Build Qt resources
-wine $WINEPREFIX/drive_c/Python26/Lib/site-packages/PyQt4/pyrcc4.exe C:/electrum/icons.qrc -o C:/electrum/lib/icons_rc.py
+$PYTHON -m pip install -r ../../deterministic-build/requirements-hw.txt
 
-# Copy ZBar libraries to electrum
-#cp "$WINEPREFIX/drive_c/Program Files (x86)/ZBar/bin/"*.dll "$WINEPREFIX/drive_c/electrum/"
+pushd $WINEPREFIX/drive_c/electrum
+$PYTHON -m pip install .
+popd
 
 cd ..
 
 rm -rf dist/
 
-# For building standalone compressed EXE, run:
-$PYTHON "C:/pyinstaller/pyinstaller.py" --noconfirm --ascii -w --onefile "C:/electrum/electrum"
+# build standalone and portable versions
+wine "$PYHOME/scripts/pyinstaller.exe" --noconfirm --ascii --clean --name $NAME_ROOT-$VERSION -w deterministic.spec
 
-# For building uncompressed directory of dependencies, run:
-$PYTHON "C:/pyinstaller/pyinstaller.py" --noconfirm --ascii -w deterministic.spec
+# set timestamps in dist, in order to make the installer reproducible
+pushd dist
+find -exec touch -d '2000-11-11T11:11:11+00:00' {} +
+popd
 
-# For building NSIS installer, run:
-wine "$WINEPREFIX/drive_c/Program Files (x86)/NSIS/makensis.exe" electrum.nsi
-#wine $WINEPREFIX/drive_c/Program\ Files\ \(x86\)/NSIS/makensis.exe electrum.nsis
+# build NSIS installer
+# $VERSION could be passed to the electrum.nsi script, but this would require some rewriting in the script itself.
+wine "$WINEPREFIX/drive_c/Program Files (x86)/NSIS/makensis.exe" /DPRODUCT_VERSION=$VERSION electrum.nsi
 
-DATE=`date +"%Y%m%d"`
 cd dist
-mv electrum.exe $NAME_ROOT-$DATE-$COMMIT_HASH.exe
-mv electrum $NAME_ROOT-$DATE-$COMMIT_HASH
-mv electrum-setup.exe $NAME_ROOT-$DATE-$COMMIT_HASH-setup.exe
-zip -r $NAME_ROOT-$DATE-$COMMIT_HASH.zip $NAME_ROOT-$DATE-$COMMIT_HASH
+mv electrum-setup.exe $NAME_ROOT-$VERSION-setup.exe
+cd ..
+
+echo "Done."
+sha256sum dist/electrum*exe
