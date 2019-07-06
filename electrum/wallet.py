@@ -209,10 +209,10 @@ class Abstract_Wallet(AddressSynchronizer):
         if not storage.is_ready_to_be_used_by_wallet():
             raise Exception("storage not ready to be used by Abstract_Wallet")
 
+        self.storage = storage
         # load addresses needs to be called before constructor for sanity checks
-        storage.db.load_addresses(self.wallet_type)
-
-        AddressSynchronizer.__init__(self, storage)
+        self.storage.db.load_addresses(self.wallet_type)
+        AddressSynchronizer.__init__(self, storage.db)
 
         # saved fields
         self.use_change            = storage.get('use_change', True)
@@ -234,6 +234,18 @@ class Abstract_Wallet(AddressSynchronizer):
         self.contacts = Contacts(self.storage)
 
         self._coin_price_cache = {}
+
+    def stop_threads(self):
+        super().stop_threads()
+        self.storage.write()
+
+    def set_up_to_date(self, b):
+        super().set_up_to_date(b)
+        if b: self.storage.write()
+
+    def clear_history(self):
+        super().clear_history()
+        self.storage.write()
 
     def load_and_cleanup(self):
         self.load_keystore()
@@ -914,7 +926,7 @@ class Abstract_Wallet(AddressSynchronizer):
             method_used = 2
 
         actual_new_fee_rate = tx_new.get_fee() / tx_new.estimated_size()
-        if actual_new_fee_rate < quantize_feerate(new_fee_rate):
+        if quantize_feerate(actual_new_fee_rate) < quantize_feerate(new_fee_rate):
             raise Exception(f"bump_fee feerate target was not met (method: {method_used}). "
                             f"got {actual_new_fee_rate}, expected >={new_fee_rate}")
 
