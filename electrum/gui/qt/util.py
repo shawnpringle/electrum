@@ -92,6 +92,7 @@ class WWLabel(QLabel):
     def __init__ (self, text="", parent=None):
         QLabel.__init__(self, text, parent)
         self.setWordWrap(True)
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
 
 class HelpLabel(QLabel):
@@ -133,7 +134,8 @@ class HelpButton(QPushButton):
         custom_message_box(icon=QMessageBox.Information,
                            parent=self,
                            title=_('Help'),
-                           text=self.help_text)
+                           text=self.help_text,
+                           rich_text=True)
 
 
 class InfoButton(QPushButton):
@@ -148,7 +150,8 @@ class InfoButton(QPushButton):
         custom_message_box(icon=QMessageBox.Information,
                            parent=self,
                            title=_('Info'),
-                           text=self.help_text)
+                           text=self.help_text,
+                           rich_text=True)
 
 
 class Buttons(QHBoxLayout):
@@ -204,11 +207,15 @@ class MessageBoxMixin(object):
     def top_level_window(self, test_func=None):
         return self.top_level_window_recurse(test_func)
 
-    def question(self, msg, parent=None, title=None, icon=None):
+    def question(self, msg, parent=None, title=None, icon=None, **kwargs) -> bool:
         Yes, No = QMessageBox.Yes, QMessageBox.No
-        return self.msg_box(icon or QMessageBox.Question,
-                            parent, title or '',
-                            msg, buttons=Yes|No, defaultButton=No) == Yes
+        return Yes == self.msg_box(icon=icon or QMessageBox.Question,
+                                   parent=parent,
+                                   title=title or '',
+                                   text=msg,
+                                   buttons=Yes|No,
+                                   defaultButton=No,
+                                   **kwargs)
 
     def show_warning(self, msg, parent=None, title=None, **kwargs):
         return self.msg_box(QMessageBox.Warning, parent,
@@ -252,7 +259,11 @@ def custom_message_box(*, icon, parent, title, text, buttons=QMessageBox.Ok,
     d.setDefaultButton(defaultButton)
     if rich_text:
         d.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
-        d.setTextFormat(Qt.RichText)
+        # set AutoText instead of RichText
+        # AutoText lets Qt figure out whether to render as rich text.
+        # e.g. if text is actually plain text and uses "\n" newlines;
+        #      and we set RichText here, newlines would be swallowed
+        d.setTextFormat(Qt.AutoText)
     else:
         d.setTextInteractionFlags(Qt.TextSelectableByMouse)
         d.setTextFormat(Qt.PlainText)
