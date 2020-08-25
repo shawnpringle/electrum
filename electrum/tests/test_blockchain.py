@@ -7,10 +7,10 @@ from electrum.simple_config import SimpleConfig
 from electrum.blockchain import Blockchain, deserialize_header, hash_header
 from electrum.util import bh2u, bfh, make_dir
 
-from . import SequentialTestCase
+from . import ElectrumTestCase
 
 
-class TestBlockchain(SequentialTestCase):
+class TestBlockchain(ElectrumTestCase):
 
     HEADERS = {
         'A': deserialize_header(bfh("0100000000000000000000000000000000000000000000000000000000000000000000003ba3edfd7a7b12b27ac72c3e67768f617fc81bc3888a51323a9fb8aa4b1e5e4adae5494dffff7f2002000000"), 0),
@@ -57,14 +57,10 @@ class TestBlockchain(SequentialTestCase):
 
     def setUp(self):
         super().setUp()
-        self.data_dir = tempfile.mkdtemp()
+        self.data_dir = self.electrum_path
         make_dir(os.path.join(self.data_dir, 'forks'))
         self.config = SimpleConfig({'electrum_path': self.data_dir})
         blockchain.blockchains = {}
-
-    def tearDown(self):
-        super().tearDown()
-        shutil.rmtree(self.data_dir)
 
     def _append_header(self, chain: Blockchain, header: dict):
         self.assertTrue(chain.can_connect(header))
@@ -339,3 +335,85 @@ class TestBlockchain(SequentialTestCase):
 
         for b in (chain_u, chain_l, chain_z):
             self.assertTrue(all([b.can_connect(b.read_header(i), False) for i in range(b.height())]))
+
+    def get_chains_that_contain_header_helper(self, header: dict):
+        height = header['block_height']
+        header_hash = hash_header(header)
+        return blockchain.get_chains_that_contain_header(height, header_hash)
+
+    def test_get_chains_that_contain_header(self):
+        blockchain.blockchains[constants.net.GENESIS] = chain_u = Blockchain(
+            config=self.config, forkpoint=0, parent=None,
+            forkpoint_hash=constants.net.GENESIS, prev_hash=None)
+        open(chain_u.path(), 'w+').close()
+        self._append_header(chain_u, self.HEADERS['A'])
+        self._append_header(chain_u, self.HEADERS['B'])
+        self._append_header(chain_u, self.HEADERS['C'])
+        self._append_header(chain_u, self.HEADERS['D'])
+        self._append_header(chain_u, self.HEADERS['E'])
+        self._append_header(chain_u, self.HEADERS['F'])
+        self._append_header(chain_u, self.HEADERS['O'])
+        self._append_header(chain_u, self.HEADERS['P'])
+        self._append_header(chain_u, self.HEADERS['Q'])
+
+        chain_l = chain_u.fork(self.HEADERS['G'])
+        self._append_header(chain_l, self.HEADERS['H'])
+        self._append_header(chain_l, self.HEADERS['I'])
+        self._append_header(chain_l, self.HEADERS['J'])
+        self._append_header(chain_l, self.HEADERS['K'])
+        self._append_header(chain_l, self.HEADERS['L'])
+
+        chain_z = chain_l.fork(self.HEADERS['M'])
+
+        self.assertEqual([chain_l, chain_z, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['A']))
+        self.assertEqual([chain_l, chain_z, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['C']))
+        self.assertEqual([chain_l, chain_z, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['F']))
+        self.assertEqual([chain_l, chain_z], self.get_chains_that_contain_header_helper(self.HEADERS['G']))
+        self.assertEqual([chain_l, chain_z], self.get_chains_that_contain_header_helper(self.HEADERS['I']))
+        self.assertEqual([chain_z], self.get_chains_that_contain_header_helper(self.HEADERS['M']))
+        self.assertEqual([chain_l], self.get_chains_that_contain_header_helper(self.HEADERS['K']))
+
+        self._append_header(chain_z, self.HEADERS['N'])
+        self._append_header(chain_z, self.HEADERS['X'])
+        self._append_header(chain_z, self.HEADERS['Y'])
+        self._append_header(chain_z, self.HEADERS['Z'])
+
+        self.assertEqual([chain_z, chain_l, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['A']))
+        self.assertEqual([chain_z, chain_l, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['C']))
+        self.assertEqual([chain_z, chain_l, chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['F']))
+        self.assertEqual([chain_u], self.get_chains_that_contain_header_helper(self.HEADERS['O']))
+        self.assertEqual([chain_z, chain_l], self.get_chains_that_contain_header_helper(self.HEADERS['I']))
+
+
+class TestVerifyHeader(ElectrumTestCase):
+
+    # Data for Bitcoin block header #100.
+    valid_header = "0100000095194b8567fe2e8bbda931afd01a7acd399b9325cb54683e64129bcd00000000660802c98f18fd34fd16d61c63cf447568370124ac5f3be626c2e1c3c9f0052d19a76949ffff001d33f3c25d"
+    target = Blockchain.bits_to_target(0x1d00ffff)
+    prev_hash = "00000000cd9b12643e6854cb25939b39cd7a1ad0af31a9bd8b2efe67854b1995"
+
+    def setUp(self):
+        super().setUp()
+        self.header = deserialize_header(bfh(self.valid_header), 100)
+
+    def test_valid_header(self):
+        Blockchain.verify_header(self.header, self.prev_hash, self.target)
+
+    def test_expected_hash_mismatch(self):
+        with self.assertRaises(Exception):
+            Blockchain.verify_header(self.header, self.prev_hash, self.target,
+                                     expected_header_hash="foo")
+
+    def test_prev_hash_mismatch(self):
+        with self.assertRaises(Exception):
+            Blockchain.verify_header(self.header, "foo", self.target)
+
+    def test_target_mismatch(self):
+        with self.assertRaises(Exception):
+            other_target = Blockchain.bits_to_target(0x1d00eeee)
+            Blockchain.verify_header(self.header, self.prev_hash, other_target)
+
+    def test_insufficient_pow(self):
+        with self.assertRaises(Exception):
+            self.header["nonce"] = 42
+            Blockchain.verify_header(self.header, self.prev_hash, self.target)

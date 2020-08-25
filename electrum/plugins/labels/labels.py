@@ -3,7 +3,7 @@ import hashlib
 import json
 import sys
 import traceback
-from typing import Union
+from typing import Union, TYPE_CHECKING
 
 import base64
 
@@ -12,6 +12,9 @@ from electrum.crypto import aes_encrypt_with_iv, aes_decrypt_with_iv
 from electrum.i18n import _
 from electrum.util import log_exceptions, ignore_exceptions, make_aiohttp_session
 from electrum.network import Network
+
+if TYPE_CHECKING:
+    from electrum.wallet import Abstract_Wallet
 
 
 class ErrorConnectingServer(Exception):
@@ -46,7 +49,7 @@ class LabelsPlugin(BasePlugin):
 
     def get_nonce(self, wallet):
         # nonce is the nonce to be used with the next change
-        nonce = wallet.storage.get('wallet_nonce')
+        nonce = wallet.db.get('wallet_nonce')
         if nonce is None:
             nonce = 1
             self.set_nonce(wallet, nonce)
@@ -54,7 +57,7 @@ class LabelsPlugin(BasePlugin):
 
     def set_nonce(self, wallet, nonce):
         self.logger.info(f"set {wallet.basename()} nonce to {nonce}")
-        wallet.storage.put("wallet_nonce", nonce)
+        wallet.db.put("wallet_nonce", nonce)
 
     @hook
     def set_label(self, wallet, item, label):
@@ -149,10 +152,11 @@ class LabelsPlugin(BasePlugin):
                 wallet.labels[key] = value
 
         self.logger.info(f"received {len(response)} labels")
-        # do not write to disk because we're in a daemon thread
-        wallet.storage.put('labels', wallet.labels)
         self.set_nonce(wallet, response["nonce"] + 1)
         self.on_pulled(wallet)
+
+    def on_pulled(self, wallet: 'Abstract_Wallet') -> None:
+        raise NotImplementedError()
 
     @ignore_exceptions
     @log_exceptions
@@ -160,7 +164,7 @@ class LabelsPlugin(BasePlugin):
         try:
             await self.pull_thread(wallet, force)
         except ErrorConnectingServer as e:
-            self.logger.info(str(e))
+            self.logger.info(repr(e))
 
     def pull(self, wallet, force):
         if not wallet.network: raise Exception(_('You are offline.'))

@@ -12,6 +12,7 @@ from typing import Sequence, Optional
 
 from aiorpcx.curio import timeout_after, TaskTimeout, TaskGroup
 
+from . import util
 from .bitcoin import COIN
 from .i18n import _
 from .util import (ThreadJob, make_dir, log_exceptions,
@@ -78,6 +79,9 @@ class ExchangeBase(Logger):
             self.logger.info(f"getting fx quotes for {ccy}")
             self.quotes = await self.get_rates(ccy)
             self.logger.info("received fx quotes")
+        except asyncio.CancelledError:
+            # CancelledError must be passed-through for cancellation to work
+            raise
         except BaseException as e:
             self.logger.info(f"failed fx quotes: {repr(e)}")
             self.quotes = {}
@@ -188,13 +192,6 @@ class BitFlyer(ExchangeBase):
     async def get_rates(self, ccy):
         json = await self.get_json('bitflyer.jp', '/api/echo/price')
         return {'JPY': Decimal(json['mid'])}
-
-
-class Bitmarket(ExchangeBase):
-
-    async def get_rates(self, ccy):
-        json = await self.get_json('www.bitmarket.pl', '/json/BTCPLN/ticker.json')
-        return {'PLN': Decimal(json['last'])}
 
 
 class BitPay(ExchangeBase):
@@ -318,6 +315,13 @@ class CoinGecko(ExchangeBase):
                      for h in history['prices']])
 
 
+class CointraderMonitor(ExchangeBase):
+
+    async def get_rates(self, ccy):
+        json = await self.get_json('cointradermonitor.com', '/api/pbb/v1/ticker')
+        return {'BRL': Decimal(json['last'])}
+
+
 class itBit(ExchangeBase):
 
     async def get_rates(self, ccy):
@@ -355,12 +359,6 @@ class MercadoBitcoin(ExchangeBase):
         return {'BRL': Decimal(json['ticker_1h']['exchanges']['MBT']['last'])}
 
 
-class NegocieCoins(ExchangeBase):
-
-    async def get_rates(self,ccy):
-        json = await self.get_json('api.bitvalor.com', '/v1/ticker.json')
-        return {'BRL': Decimal(json['ticker_1h']['exchanges']['NEG']['last'])}
-
 class TheRockTrading(ExchangeBase):
 
     async def get_rates(self, ccy):
@@ -390,6 +388,20 @@ class Zaif(ExchangeBase):
     async def get_rates(self, ccy):
         json = await self.get_json('api.zaif.jp', '/api/1/last_price/btc_jpy')
         return {'JPY': Decimal(json['last_price'])}
+
+
+class Bitragem(ExchangeBase):
+
+    async def get_rates(self,ccy):
+        json = await self.get_json('api.bitragem.com', '/v1/index?asset=BTC&market=BRL')
+        return {'BRL': Decimal(json['response']['index'])}
+
+
+class Biscoint(ExchangeBase):
+
+    async def get_rates(self,ccy):
+        json = await self.get_json('api.biscoint.io', '/v1/ticker?base=BTC&quote=BRL')
+        return {'BRL': Decimal(json['data']['last'])}
 
 
 def dictinvert(d):
@@ -456,12 +468,11 @@ def get_exchanges_by_ccy(history=True):
 
 class FxThread(ThreadJob):
 
-    def __init__(self, config: SimpleConfig, network: Network):
+    def __init__(self, config: SimpleConfig, network: Optional[Network]):
         ThreadJob.__init__(self)
         self.config = config
         self.network = network
-        if self.network:
-            self.network.register_callback(self.set_proxy, ['proxy_set'])
+        util.register_callback(self.set_proxy, ['proxy_set'])
         self.ccy = self.get_currency()
         self.history_used_spot = False
         self.ccy_combo = None
@@ -520,8 +531,11 @@ class FxThread(ThreadJob):
         self.config.set_key('use_exchange_rate', bool(b))
         self.trigger_update()
 
-    def get_history_config(self, *, default=False):
-        return bool(self.config.get('history_rates', default))
+    def get_history_config(self, *, allow_none=False):
+        val = self.config.get('history_rates', None)
+        if val is None and allow_none:
+            return None
+        return bool(val)
 
     def set_history_config(self, b):
         self.config.set_key('history_rates', bool(b))
@@ -563,19 +577,18 @@ class FxThread(ThreadJob):
         self.logger.info(f"using exchange {name}")
         if self.config_exchange() != name:
             self.config.set_key('use_exchange', name, True)
-        self.exchange = class_(self.on_quotes, self.on_history)
+        assert issubclass(class_, ExchangeBase), f"unexpected type {class_} for {name}"
+        self.exchange = class_(self.on_quotes, self.on_history)  # type: ExchangeBase
         # A new exchange means new fx quotes, initially empty.  Force
         # a quote refresh
         self.trigger_update()
         self.exchange.read_historical_rates(self.ccy, self.cache_dir)
 
     def on_quotes(self):
-        if self.network:
-            self.network.trigger_callback('on_quotes')
+        util.trigger_callback('on_quotes')
 
     def on_history(self):
-        if self.network:
-            self.network.trigger_callback('on_history')
+        util.trigger_callback('on_history')
 
     def exchange_rate(self) -> Decimal:
         """Returns the exchange rate as a Decimal"""
@@ -614,9 +627,11 @@ class FxThread(ThreadJob):
         rate = self.exchange.historical_rate(self.ccy, d_t)
         # Frequently there is no rate for today, until tomorrow :)
         # Use spot quotes in that case
-        if rate == 'NaN' and (datetime.today().date() - d_t.date()).days <= 2:
+        if rate in ('NaN', None) and (datetime.today().date() - d_t.date()).days <= 2:
             rate = self.exchange.quotes.get(self.ccy, 'NaN')
             self.history_used_spot = True
+        if rate is None:
+            rate = 'NaN'
         return Decimal(rate)
 
     def historical_value_str(self, satoshis, d_t):

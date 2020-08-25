@@ -1,14 +1,16 @@
-import os
 import qrcode
 
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QPen
 import PyQt5.QtGui as QtGui
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QApplication, QVBoxLayout, QTextEdit, QHBoxLayout, QPushButton, QWidget)
+    QApplication, QVBoxLayout, QTextEdit, QHBoxLayout, QPushButton, QWidget,
+    QFileDialog,
+)
 
-import electrum
 from electrum.i18n import _
-from .util import WindowModalDialog
+
+from .util import WindowModalDialog, get_parent_main_window, WWLabel
 
 
 class QRCodeWidget(QWidget):
@@ -48,6 +50,8 @@ class QRCodeWidget(QWidget):
 
         black = QColor(0, 0, 0, 255)
         white = QColor(255, 255, 255, 255)
+        black_pen = QPen(black)
+        black_pen.setJoinStyle(Qt.MiterJoin)
 
         if not self.qr:
             qp = QtGui.QPainter()
@@ -77,52 +81,74 @@ class QRCodeWidget(QWidget):
         qp.drawRect(0, 0, framesize, framesize)
         # Draw qr code
         qp.setBrush(black)
-        qp.setPen(black)
+        qp.setPen(black_pen)
         for r in range(k):
             for c in range(k):
                 if matrix[r][c]:
-                    qp.drawRect(left+c*boxsize, top+r*boxsize, boxsize - 1, boxsize - 1)
+                    qp.drawRect(int(left+c*boxsize), int(top+r*boxsize),
+                                boxsize - 1, boxsize - 1)
         qp.end()
 
 
 
 class QRDialog(WindowModalDialog):
 
-    def __init__(self, data, parent=None, title = "", show_text=False):
+    def __init__(
+            self,
+            data,
+            parent=None,
+            title="",
+            show_text=False,
+            *,
+            help_text=None,
+            show_copy_text_btn=False,
+    ):
         WindowModalDialog.__init__(self, parent, title)
 
         vbox = QVBoxLayout()
         qrw = QRCodeWidget(data)
         vbox.addWidget(qrw, 1)
-        if show_text:
-            text = QTextEdit()
-            text.setText(data)
-            text.setReadOnly(True)
-            vbox.addWidget(text)
+        help_text = data if show_text else help_text
+        if help_text:
+            text_label = WWLabel()
+            text_label.setText(help_text)
+            vbox.addWidget(text_label)
         hbox = QHBoxLayout()
         hbox.addStretch(1)
 
-        config = electrum.get_config()
-        if config:
-            filename = os.path.join(config.path, "qrcode.png")
+        def print_qr():
+            main_window = get_parent_main_window(self)
+            if main_window:
+                filename = main_window.getSaveFileName(_("Select where to save file"), "qrcode.png")
+            else:
+                filename, __ = QFileDialog.getSaveFileName(self, _("Select where to save file"), "qrcode.png")
+            if not filename:
+                return
+            p = qrw.grab()  # FIXME also grabs neutral colored padding
+            p.save(filename, 'png')
+            self.show_message(_("QR code saved to file") + " " + filename)
 
-            def print_qr():
-                p = qrw.grab()  # FIXME also grabs neutral colored padding
-                p.save(filename, 'png')
-                self.show_message(_("QR code saved to file") + " " + filename)
+        def copy_image_to_clipboard():
+            p = qrw.grab()
+            QApplication.clipboard().setPixmap(p)
+            self.show_message(_("QR code copied to clipboard"))
 
-            def copy_to_clipboard():
-                p = qrw.grab()
-                QApplication.clipboard().setPixmap(p)
-                self.show_message(_("QR code copied to clipboard"))
+        def copy_text_to_clipboard():
+            QApplication.clipboard().setText(data)
+            self.show_message(_("Text copied to clipboard"))
 
-            b = QPushButton(_("Copy"))
+        b = QPushButton(_("Copy Image"))
+        hbox.addWidget(b)
+        b.clicked.connect(copy_image_to_clipboard)
+
+        if show_copy_text_btn:
+            b = QPushButton(_("Copy Text"))
             hbox.addWidget(b)
-            b.clicked.connect(copy_to_clipboard)
+            b.clicked.connect(copy_text_to_clipboard)
 
-            b = QPushButton(_("Save"))
-            hbox.addWidget(b)
-            b.clicked.connect(print_qr)
+        b = QPushButton(_("Save"))
+        hbox.addWidget(b)
+        b.clicked.connect(print_qr)
 
         b = QPushButton(_("Close"))
         hbox.addWidget(b)

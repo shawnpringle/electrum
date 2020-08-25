@@ -232,10 +232,13 @@ def configure_logging(config):
     verbosity_shortcuts = config.get('verbosity_shortcuts')
     _configure_verbosity(verbosity=verbosity, verbosity_shortcuts=verbosity_shortcuts)
 
+    log_to_file = config.get('log_to_file', False)
     is_android = 'ANDROID_DATA' in os.environ
-    if is_android or not config.get('log_to_file', False):
-        pass  # disable file logging
-    else:
+    if is_android:
+        from jnius import autoclass
+        build_config = autoclass("org.electrum.electrum.BuildConfig")
+        log_to_file |= bool(build_config.DEBUG)
+    if log_to_file:
         log_directory = pathlib.Path(config.path) / "logs"
         _configure_file_logging(log_directory)
 
@@ -243,7 +246,8 @@ def configure_logging(config):
     logging.getLogger('kivy').propagate = False
 
     from . import ELECTRUM_VERSION
-    _logger.info(f"Electrum version: {ELECTRUM_VERSION} - https://electrum.org - https://github.com/spesmilo/electrum")
+    from .constants import GIT_REPO_URL
+    _logger.info(f"Electrum version: {ELECTRUM_VERSION} - https://electrum.org - {GIT_REPO_URL}")
     _logger.info(f"Python version: {sys.version}. On platform: {describe_os_version()}")
     _logger.info(f"Logging to file: {str(_logfile_path)}")
     _logger.info(f"Log filters: verbosity {repr(verbosity)}, verbosity_shortcuts {repr(verbosity_shortcuts)}")
@@ -256,7 +260,7 @@ def get_logfile_path() -> Optional[pathlib.Path]:
 def describe_os_version() -> str:
     if 'ANDROID_DATA' in os.environ:
         from kivy import utils
-        if utils.platform is not "android":
+        if utils.platform != "android":
             return utils.platform
         import jnius
         bv = jnius.autoclass('android.os.Build$VERSION')

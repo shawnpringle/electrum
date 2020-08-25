@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 
 from decimal import Decimal
+from typing import Union
 
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QPalette, QPainter, QFontMetrics
+from PyQt5.QtGui import QPalette, QPainter
 from PyQt5.QtWidgets import (QLineEdit, QStyle, QStyleOptionFrame)
 
-from .util import char_width_in_lineedit
+from .util import char_width_in_lineedit, ColorScheme
 
 from electrum.util import (format_satoshis_plain, decimal_point_to_base_unit_name,
                            FEERATE_PRECISION, quantize_feerate)
@@ -14,7 +15,7 @@ from electrum.util import (format_satoshis_plain, decimal_point_to_base_unit_nam
 from qsdn import Locale as QSDNLocale
 from qsdn import LimitingNumericValidator as QSDNLimitedNumericValidator 
 from PyQt5.QtGui import QValidator
-class MyLineEdit(QLineEdit):
+class FreezableLineEdit(QLineEdit):
     frozen = pyqtSignal()
 
     def setFrozen(self, b):
@@ -22,7 +23,7 @@ class MyLineEdit(QLineEdit):
         self.setFrame(not b)
         self.frozen.emit()
 
-class AmountEdit(MyLineEdit):
+class AmountEdit(FreezableLineEdit):
     shortcut = pyqtSignal()
 
     def __init__(self, base_unit, is_int=False, parent=None):
@@ -33,7 +34,6 @@ class AmountEdit(MyLineEdit):
         #self.textChanged.connect(self.numbify)
         self.is_int = is_int
         self.is_shortcut = False
-        self.help_palette = QPalette()
         self.extra_precision = 0
         self.locale = QSDNLocale()
         add_ws = False
@@ -88,10 +88,10 @@ class AmountEdit(MyLineEdit):
             textRect = self.style().subElementRect(QStyle.SE_LineEditContents, panel, self)
             textRect.adjust(2, 0, -10, 0)
             painter = QPainter(self)
-            painter.setPen(self.help_palette.brush(QPalette.Disabled, QPalette.Text).color())
+            painter.setPen(ColorScheme.GRAY.as_color())
             painter.drawText(textRect, Qt.AlignRight | Qt.AlignVCenter, self.base_unit())
 
-    def get_amount(self):
+    def get_amount(self) -> Union[None, Decimal, int]:
         x, even_a_number = self.locale.toDecimal(self.text())
         if not even_a_number:
         	return None
@@ -127,12 +127,14 @@ class BTCAmountEdit(AmountEdit):
         amount = Decimal(max_prec_amount) / pow(10, self.max_precision()-self.decimal_point())
         return Decimal(amount) if not self.is_int else int(amount)
 
-	# sets the amount where /amount/ is in Satoshis
-    def setAmount(self, amount):
-        if amount is None:
+
+	# sets the amount where /amount_sat/ is in Satoshis
+    def setAmount(self, amount_sat):
+        if amount_sat is None:
             self.setText(" ") # Space forces repaint in case units changed
         else:
-            self.setText(self.locale.toString(Decimal(format_satoshis_plain(amount, self.decimal_point()))))
+            self.setText(self.locale.toString(Decimal(format_satoshis_plain(amount_sat, self.decimal_point()))))
+        self.repaint()  # macOS hack for #6269
 
 
 class FeerateEdit(BTCAmountEdit):
