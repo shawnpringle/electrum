@@ -1,6 +1,12 @@
 Electrum - Lightweight Bitcoin client
 =====================================
 
+
+In This Fork
+------------
+Thousands separators are used to make numbers easier to read.
+
+
 ::
 
   Licence: MIT Licence
