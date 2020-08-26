@@ -133,7 +133,7 @@ class BTCAmountEdit(AmountEdit):
         if amount_sat is None:
             self.setText(" ") # Space forces repaint in case units changed
         else:
-            self.setText(self.locale.toString(Decimal(format_satoshis_plain(amount_sat, self.decimal_point()))))
+            self.setText(self.locale.toString(Decimal(format_satoshis_plain(amount_sat))))
         self.repaint()  # macOS hack for #6269
 
 
