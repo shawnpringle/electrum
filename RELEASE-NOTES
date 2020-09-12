@@ -1,5 +1,6 @@
 # In this Fork only (https://github.com/shawnpringle/electrum)
  * qt: display and edit numbers using commas
+
 # Release 4.0.2 - (July 8, 2020)
  - rm old corrupted non-bip70 invoices (#6345)
  - other minor fixes
